@@ -22,6 +22,12 @@ router.get('/admin/list', protect, admin, borrowController.getAllBorrowRequests)
 // Cập nhật trạng thái phiếu (Duyệt / Từ chối / Giao sách / Trả sách)
 router.put('/admin/status/:record_id', protect, admin, borrowController.updateBorrowStatus);
 
+// MỚI: Lấy danh sách các khoản phạt (Thu phạt)
+router.get('/admin/fines', protect, admin, borrowController.getAllFines);
+
+// MỚI: Xác nhận thanh toán khoản phạt và tự động mở khóa thẻ
+router.put('/admin/fines/:id/pay', protect, admin, borrowController.payFine);
+
 // 🔒 Đã bổ sung middleware 'admin' để bảo mật dữ liệu thống kê
 router.get('/admin/stats', protect, admin, borrowController.getMonthlyStats);
 router.get('/admin/stats/daily', protect, admin, borrowController.getDailyStats);

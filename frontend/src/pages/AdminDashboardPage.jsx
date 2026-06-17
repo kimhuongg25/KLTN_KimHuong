@@ -15,9 +15,8 @@ const AdminDashboardPage = () => {
     pendingBorrows: 0
   });
 
-  // --- THÊM STATE CHO BIỂU ĐỒ THEO NGÀY (CÓ BỘ LỌC) ---
   const [dailyData, setDailyData] = useState([]);
-  const [timeRange, setTimeRange] = useState('7days'); // Mặc định 7 ngày qua
+  const [timeRange, setTimeRange] = useState('7days'); 
 
   const [monthlyStats, setMonthlyStats] = useState([]);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -31,12 +30,10 @@ const AdminDashboardPage = () => {
     fetchDashboardData();
   }, [user, navigate]);
 
-  // Hook gọi API khi thay đổi Năm (Biểu đồ Cột)
   useEffect(() => {
     if (user?.role === 'admin') fetchMonthlyStats();
   }, [user, selectedYear]);
 
-  // Hook gọi API khi thay đổi Khoảng thời gian (Biểu đồ Vùng)
   useEffect(() => {
     if (user?.role === 'admin') fetchDailyStats();
   }, [user, timeRange]);
@@ -59,7 +56,6 @@ const AdminDashboardPage = () => {
     }
   };
 
-  // --- HÀM TÍNH TOÁN NGÀY THÁNG VÀ LẤY DỮ LIỆU BIỂU ĐỒ VÙNG ---
   const fetchDailyStats = async () => {
     const today = new Date();
     let start = new Date();
@@ -68,16 +64,16 @@ const AdminDashboardPage = () => {
     if (timeRange === '7days') {
       start.setDate(today.getDate() - 6);
     } else if (timeRange === 'last_week') {
-      const dayOfWeek = today.getDay(); // 0 (CN) -> 6 (T7)
+      const dayOfWeek = today.getDay(); 
       const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      end.setDate(today.getDate() - daysToLastMonday - 1); // Chủ nhật tuần trước
+      end.setDate(today.getDate() - daysToLastMonday - 1); 
       start = new Date(end);
-      start.setDate(end.getDate() - 6); // Thứ 2 tuần trước
+      start.setDate(end.getDate() - 6); 
     } else if (timeRange === 'this_month') {
-      start = new Date(today.getFullYear(), today.getMonth(), 1); // Ngày 1 tháng này
+      start = new Date(today.getFullYear(), today.getMonth(), 1); 
     } else if (timeRange === 'last_month') {
-      start = new Date(today.getFullYear(), today.getMonth() - 1, 1); // Ngày 1 tháng trước
-      end = new Date(today.getFullYear(), today.getMonth(), 0); // Ngày cuối tháng trước
+      start = new Date(today.getFullYear(), today.getMonth() - 1, 1); 
+      end = new Date(today.getFullYear(), today.getMonth(), 0); 
     }
 
     try {
@@ -99,11 +95,11 @@ const AdminDashboardPage = () => {
         
         {/* Lời chào */}
         <div style={{ marginBottom: '30px', fontFamily: "'Times New Roman', Times, serif" }}>
-  <h2 style={{ color: '#111827', fontSize: '28px', fontWeight: '800', margin: '0 0 8px 0' }}>
-    👋 Chào mừng trở lại, {user.username}!
-  </h2>
-  <p style={{ color: '#6b7280', margin: 0, fontSize: '15px' }}>Dưới đây là tổng quan tình hình hoạt động của thư viện.</p>
-</div>
+          <h2 style={{ color: '#111827', fontSize: '28px', fontWeight: '800', margin: '0 0 8px 0' }}>
+            👋 Chào mừng trở lại, {user.username}!
+          </h2>
+          <p style={{ color: '#6b7280', margin: 0, fontSize: '15px' }}>Dưới đây là tổng quan tình hình hoạt động của thư viện.</p>
+        </div>
 
         {/* 4 Thẻ thống kê */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '30px' }}>
@@ -140,12 +136,11 @@ const AdminDashboardPage = () => {
           </div>
         </div>
 
-        {/* --- BIỂU ĐỒ 1: THEO TUẦN / THÁNG (CÓ BỘ LỌC) --- */}
+        {/* --- BIỂU ĐỒ 1: THEO TUẦN / THÁNG --- */}
         <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb', marginBottom: '30px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3 style={{ margin: 0, color: '#111827', fontSize: '18px' }}>📈 Thống kê lượt mượn sách chi tiết</h3>
             
-            {/* Bộ lọc thời gian */}
             <select 
               value={timeRange} 
               onChange={(e) => setTimeRange(e.target.value)}
@@ -231,32 +226,47 @@ const AdminDashboardPage = () => {
           </div>
         </div>
 
-        {/* Menu phím tắt quản lý */}
+        {/* --- MENU PHÍM TẮT QUẢN LÝ --- */}
         <h3 style={{ margin: '0 0 20px 0', color: '#111827', fontSize: '20px' }}>🛠️ Quản Lý Hệ Thống</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-          <Link to="/admin/books" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block' }}>
+          
+          <Link to="/admin/books" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div style={{ fontSize: '30px', marginBottom: '10px' }}>📦</div>
             <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>Kho Sách</h4>
             <span style={{ color: '#4f46e5', fontWeight: '600', fontSize: '14px' }}>Truy cập ➔</span>
           </Link>
 
-          <Link to="/admin/borrows" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block' }}>
+          <Link to="/admin/categories" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <div style={{ fontSize: '30px', marginBottom: '10px' }}>🏷️</div>
+            <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>Danh Mục Sách</h4>
+            <span style={{ color: '#8b5cf6', fontWeight: '600', fontSize: '14px' }}>Truy cập ➔</span>
+          </Link>
+
+          <Link to="/admin/borrows" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div style={{ fontSize: '30px', marginBottom: '10px' }}>📋</div>
             <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>Phiếu Mượn</h4>
             <span style={{ color: '#10b981', fontWeight: '600', fontSize: '14px' }}>Truy cập ➔</span>
           </Link>
 
-          <Link to="/admin/users" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block' }}>
+          {/* MỚI: THE BUTTON FOR FINES MANAGEMENT */}
+          <Link to="/admin/fines" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <div style={{ fontSize: '30px', marginBottom: '10px' }}>💰</div>
+            <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>Quản Lý Thu Phạt</h4>
+            <span style={{ color: '#ec4899', fontWeight: '600', fontSize: '14px' }}>Truy cập ➔</span>
+          </Link>
+
+          <Link to="/admin/users" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div style={{ fontSize: '30px', marginBottom: '10px' }}>👥</div>
             <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>Người Dùng</h4>
             <span style={{ color: '#f59e0b', fontWeight: '600', fontSize: '14px' }}>Truy cập ➔</span>
           </Link>
 
-          <Link to="/admin/reviews" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block' }}>
+          <Link to="/admin/reviews" style={{ textDecoration: 'none', backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', transition: '0.2s', display: 'block', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div style={{ fontSize: '30px', marginBottom: '10px' }}>💬</div>
             <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>Đánh Giá</h4>
             <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '14px' }}>Truy cập ➔</span>
           </Link>
+
         </div>
 
       </div>

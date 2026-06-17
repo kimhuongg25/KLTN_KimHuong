@@ -1,18 +1,18 @@
 const BorrowRecord = require('../models/BorrowRecord');
 const Book = require('../models/Book');
 const UserActivity = require('../models/UserActivity'); 
-// BỔ SUNG: Nhúng hàm gửi Email
-const { sendBorrowConfirmationEmail } = require('../services/cronService'); 
+const User = require('../models/User'); // Nhúng Model User để khóa thẻ
+
+// BỔ SUNG: Nhúng thêm hàm gửi Email Xác nhận trả sách
+const { sendBorrowConfirmationEmail, sendReturnConfirmationEmail } = require('../services/cronService'); 
 
 // 1. [POST] Gửi yêu cầu mượn sách (Độc giả)
 exports.borrowBook = async (req, res) => {
   try {
-    // 🔒 LỚP BẢO MẬT: Chặn Quản trị viên mượn sách
     if (req.user.role === 'admin') {
       return res.status(403).json({ message: "Quản trị viên không có quyền mượn sách!" });
     }
 
-    // LẤY THÊM NGÀY DỰ KIẾN TỪ FORM FRONTEND
     const { book_id, expected_borrow_date, expected_return_date } = req.body;
     const user_id = req.user._id; 
 
@@ -21,7 +21,6 @@ exports.borrowBook = async (req, res) => {
       return res.status(400).json({ message: "Sách này hiện đã hết trong kho." });
     }
 
-    // CHẶN MƯỢN TRÙNG LẶP
     const alreadyPending = await BorrowRecord.findOne({ 
       user_id, 
       book_id, 
@@ -31,7 +30,6 @@ exports.borrowBook = async (req, res) => {
       return res.status(400).json({ message: "Bạn đang có phiếu mượn chưa hoàn tất cho cuốn sách này!" });
     }
 
-    // LƯU PHIẾU MƯỢN MỚI
     const record = new BorrowRecord({ 
       user_id, 
       book_id, 
@@ -41,7 +39,6 @@ exports.borrowBook = async (req, res) => {
     });
     await record.save();
 
-    // GHI NHẬN HÀNH VI CHO AI
     await UserActivity.create({
       user_id: user_id,
       action_type: 'borrow',
@@ -96,7 +93,7 @@ exports.updateBorrowStatus = async (req, res) => {
     const book = await Book.findById(record.book_id);
 
     // ==========================================
-    // TH1: ADMIN BẤM DUYỆT (TỰ ĐỘNG KIỂM TRA 3 ĐIỀU KIỆN)
+    // TH1: ADMIN BẤM DUYỆT 
     // ==========================================
     if (status === 'approved' && record.status === 'pending') {
       if (!book || book.available_quantity < 1) {
@@ -140,14 +137,12 @@ exports.updateBorrowStatus = async (req, res) => {
     // ==========================================
     else if (status === 'borrowed' && record.status === 'approved') {
       record.status = 'borrowed';
-      record.borrow_date = new Date(); // Cập nhật lại ngày giao thực tế
-      record.due_date = record.expected_return_date; // Hạn trả tính từ form đăng ký ban đầu
+      record.borrow_date = new Date(); 
+      record.due_date = record.expected_return_date; 
 
-      // BỔ SUNG: Kéo dữ liệu người dùng và sách để lấy Email + Tên sách
       await record.populate('user_id', 'fullName username email');
       await record.populate('book_id', 'title');
 
-      // BỔ SUNG: Gọi hàm gửi thư chạy ngầm (Không làm chậm quá trình phản hồi API)
       try {
         sendBorrowConfirmationEmail(record);
       } catch (emailError) {
@@ -163,43 +158,73 @@ exports.updateBorrowStatus = async (req, res) => {
     }
     
     // ==========================================
-    // TH3: ĐỘC GIẢ TRẢ SÁCH (Tự động tính phạt)
+    // TH3: ĐỘC GIẢ TRẢ SÁCH (CÓ XỬ LÝ PHẠT HƯ HỎNG & GỬI EMAIL)
     // ==========================================
-    else if (status === 'returned' && (record.status === 'borrowed' || record.status === 'approved')) {
+    else if (status === 'returned' && (record.status === 'borrowed' || record.status === 'approved' || record.status === 'overdue')) {
       record.return_date = new Date();
       record.status = 'returned';
 
       let totalFineAmount = 0;
       let fineReasons = [];
+      let daysLate = 0; // Biến lưu số ngày trễ
 
+      // Tính phí phạt trả trễ
       if (record.due_date && record.return_date > record.due_date) {
-        const daysLate = Math.ceil((record.return_date - record.due_date) / (1000 * 60 * 60 * 24));
+        daysLate = Math.ceil((record.return_date - record.due_date) / (1000 * 60 * 60 * 24));
         if (daysLate > 0) {
           totalFineAmount += (daysLate * 5000);
           fineReasons.push(`Trả trễ ${daysLate} ngày`);
         }
       }
 
+      // Tính phí phạt hư hỏng VÀ LÝ DO (Từ Frontend gửi lên)
+      let damageReasonInput = '';
       if (fine && fine.amount) {
         const frontendFine = Number(fine.amount);
         if (frontendFine > 0) {
           totalFineAmount += frontendFine;
-          fineReasons.push('Hư hỏng/Mất sách');
+          damageReasonInput = fine.damageReason || 'Lý do khác';
+          fineReasons.push(`Phạt: ${damageReasonInput}`);
         }
       }
 
+      const paymentStatus = fine?.status || 'unpaid'; 
+
+      // Ghi nhận tiền phạt & Trạng thái thanh toán
       if (totalFineAmount > 0) {
         record.fine = {
           amount: totalFineAmount,
           reason: fineReasons.join(' + '),
-          status: 'unpaid' 
+          status: paymentStatus 
         };
+
+        // 🚨 NẾU CHƯA THANH TOÁN -> KHÓA QUYỀN MƯỢN SÁCH CỦA ĐỘC GIẢ
+        if (paymentStatus === 'unpaid') {
+          await User.findByIdAndUpdate(record.user_id, { status: 'locked' });
+        }
       }
 
       if (book) {
         book.available_quantity += 1;
         await book.save();
       }
+
+      // BỔ SUNG: Nạp thông tin Sách & Độc giả để chuẩn bị gửi Email
+      await record.populate('user_id', 'fullName username email');
+      await record.populate('book_id', 'title');
+
+      // KÍCH HOẠT HÀM GỬI EMAIL XÁC NHẬN TRẢ SÁCH (Chạy ngầm)
+      try {
+        sendReturnConfirmationEmail(record, {
+          daysLate,
+          totalFineAmount,
+          paymentStatus,
+          damageReason: damageReasonInput
+        });
+      } catch (emailErr) {
+        console.error("Lỗi gửi mail xác nhận trả sách:", emailErr);
+      }
+
     } else {
       return res.status(400).json({ message: "Trạng thái cập nhật không hợp lệ với quy trình hiện tại." });
     }
@@ -314,6 +339,66 @@ exports.getDailyStats = async (req, res) => {
     }
 
     res.status(200).json(dateArray);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ==========================================
+// 7. [GET] Lấy danh sách các phiếu có phát sinh phí phạt (Admin)
+// ==========================================
+exports.getAllFines = async (req, res) => {
+  try {
+    // Chỉ lấy những phiếu có tiền phạt > 0
+    const records = await BorrowRecord.find({ "fine.amount": { $gt: 0 } })
+      .populate('user_id', 'username fullName email status')
+      .populate('book_id', 'title')
+      .sort({ createdAt: -1 });
+    res.status(200).json(records);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ==========================================
+// 8. [PUT] Xác nhận thanh toán phạt và Mở khóa tài khoản
+// ==========================================
+exports.payFine = async (req, res) => {
+  try {
+    const recordId = req.params.id;
+    const record = await BorrowRecord.findById(recordId);
+
+    if (!record || !record.fine) {
+      return res.status(404).json({ message: "Không tìm thấy thông tin phạt." });
+    }
+
+    // 1. Cập nhật trạng thái phiếu phạt thành 'paid' (Đã thanh toán)
+    record.fine.status = 'paid';
+    await record.save();
+
+    // 2. KIỂM TRA ĐỂ TỰ ĐỘNG MỞ KHÓA TÀI KHOẢN
+    // Đếm xem độc giả này CÒN khoản nợ hoặc phiếu quá hạn nào khác không
+    const remainingUnpaid = await BorrowRecord.countDocuments({
+      user_id: record.user_id,
+      $or: [
+        { "fine.status": 'unpaid' },
+        { status: 'overdue' }
+      ]
+    });
+
+    // 3. Nếu KHÔNG còn khoản nợ nào -> Mở khóa thẻ ngay lập tức
+    let unlockMessage = "";
+    if (remainingUnpaid === 0) {
+      await User.findByIdAndUpdate(record.user_id, { status: 'active' });
+      unlockMessage = "Tài khoản độc giả đã được hệ thống tự động Mở Khóa.";
+    } else {
+      unlockMessage = `Độc giả vẫn còn ${remainingUnpaid} khoản phạt/quá hạn khác chưa xử lý.`;
+    }
+
+    res.status(200).json({ 
+      message: `Đã xác nhận thu tiền thành công! ${unlockMessage}`, 
+      record 
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

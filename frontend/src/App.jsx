@@ -17,9 +17,15 @@ import ManageReviewsPage from './pages/ManageReviewsPage';
 // 1. IMPORT CHATBOT WIDGET VÀO APP
 import ChatbotWidget from './components/ChatbotWidget';
 
+// BỔ SUNG: Import component ScrollToTop
+import ScrollToTop from './components/ScrollToTop';
+import ManageFinesPage from './pages/ManageFinesPage';
 function App() {
   return (
     <Router>
+      {/* ĐẶT Ở ĐÂY: Có hiệu lực tự động kéo lên đầu trang cho toàn bộ hệ thống */}
+      <ScrollToTop />
+      
       <Navbar /> 
       <Routes>
         {/* CÁC ROUTE CỦA NGƯỜI DÙNG */}
@@ -39,6 +45,7 @@ function App() {
         <Route path="/admin/reviews" element={<ManageReviewsPage />} />
         
         <Route path="/admin/categories" element={<ManageCategoriesPage />} />
+        <Route path="/admin/fines" element={<ManageFinesPage />} />
       </Routes>
       
       {/* 2. ĐẶT CHATBOT Ở ĐÂY (Nằm ngoài Routes để nó luôn hiển thị ở mọi trang) */}

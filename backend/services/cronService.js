@@ -28,11 +28,11 @@ const sendBorrowConfirmationEmail = async (record) => {
     if (!userEmail) return console.log("⚠️ Không tìm thấy email của độc giả để gửi thông báo.");
 
     const mailOptions = {
-      from: `"Thư Viện Thông Minh" <${process.env.EMAIL_USER}>`,
+      from: `"Smart Library" <${process.env.EMAIL_USER}>`,
       to: userEmail,
-      subject: '📚 [Thư Viện Thông Minh] - Xác nhận giao sách thành công',
+      subject: '📚 [Smart Library] - Xác nhận giao sách thành công',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <div style="font-family: 'Times New Roman', Times, serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
           <div style="background-color: #4f46e5; padding: 24px; text-align: center; color: white;">
             <h2 style="margin: 0; font-size: 24px; font-weight: bold;">XÁC NHẬN GIAO SÁCH THÀNH CÔNG</h2>
           </div>
@@ -74,7 +74,110 @@ const sendBorrowConfirmationEmail = async (record) => {
 };
 
 // ==========================================
-// 3. HÀM CHẠY TÁC VỤ TỰ ĐỘNG (CRONJOB)
+// 3. HÀM GỬI EMAIL XÁC NHẬN TRẢ SÁCH (MỚI)
+// ==========================================
+const sendReturnConfirmationEmail = async (record, returnDetails) => {
+  try {
+    const userEmail = record.user_id?.email;
+    const userName = record.user_id?.fullName || record.user_id?.username;
+    const bookTitle = record.book_id?.title;
+
+    const borrowDateStr = new Date(record.borrow_date).toLocaleDateString('vi-VN');
+    const dueDateStr = new Date(record.due_date).toLocaleDateString('vi-VN');
+    const returnDateStr = new Date(record.return_date).toLocaleDateString('vi-VN');
+
+    if (!userEmail) return console.log("⚠️ Không tìm thấy email của độc giả để gửi thông báo trả sách.");
+
+    let htmlContent = '';
+    const totalFine = returnDetails.totalFineAmount || 0;
+
+    if (totalFine === 0) {
+      // TRƯỜNG HỢP 1: TRẢ ĐÚNG HẠN, KHÔNG PHẠT
+      htmlContent = `
+        <div style="font-family: 'Times New Roman', Times, serif; font-size: 16px; line-height: 1.6; color: #374151; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; padding: 30px; border-radius: 12px; background-color: #ffffff;">
+          <p>Kính gửi <strong>${userName}</strong>,</p>
+          <p>Thư viện xin thông báo rằng yêu cầu trả sách của bạn đã được xác nhận thành công.</p>
+          
+          <h4 style="color: #111827; margin-bottom: 5px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Thông tin phiếu mượn:</h4>
+          <ul style="margin-top: 5px; list-style-type: none; padding-left: 0;">
+            <li><strong>Ngày mượn:</strong> ${borrowDateStr}</li>
+            <li><strong>Hạn trả:</strong> ${dueDateStr}</li>
+            <li><strong>Ngày trả thực tế:</strong> ${returnDateStr}</li>
+          </ul>
+
+          <h4 style="color: #111827; margin-bottom: 5px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Danh sách sách đã trả:</h4>
+          <ul style="margin-top: 5px; padding-left: 20px;">
+            <li style="color: #4f46e5; font-weight: bold;">${bookTitle}</li>
+          </ul>
+
+          <h4 style="color: #111827; margin-bottom: 5px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Trạng thái:</h4>
+          <ul style="margin-top: 5px; color: #059669; font-weight: bold; padding-left: 20px;">
+            <li>Trả đúng hạn.</li>
+            <li>Không phát sinh phí phạt.</li>
+          </ul>
+
+          <p style="margin-top: 20px;">Cảm ơn bạn đã sử dụng dịch vụ của thư viện.</p>
+          <p style="margin-bottom: 0;">Trân trọng,<br/><strong>Ban quản lý thư viện</strong></p>
+        </div>
+      `;
+    } else {
+      // TRƯỜNG HỢP 2: CÓ PHÁT SINH PHẠT (Trễ hạn / Hư hỏng)
+      const lateDaysText = returnDetails.daysLate > 0 ? `<li><strong>Số ngày trả trễ:</strong> ${returnDetails.daysLate} ngày</li>` : '';
+      const damageReasonText = returnDetails.damageReason ? `<li><strong>Lý do phạt thêm:</strong> ${returnDetails.damageReason}</li>` : '';
+      const paymentStatusText = returnDetails.paymentStatus === 'paid' ? '<span style="color: #059669;">Đã thanh toán</span>' : '<span style="color: #dc2626;">Chưa thanh toán</span>';
+      
+      const paymentWarning = returnDetails.paymentStatus === 'unpaid' 
+        ? `<p style="color: #dc2626; font-weight: bold; background-color: #fee2e2; padding: 10px; border-radius: 6px; border: 1px solid #fca5a5;">Vui lòng hoàn tất nghĩa vụ thanh toán theo quy định của thư viện để tiếp tục sử dụng các dịch vụ mượn sách.</p>` 
+        : '';
+
+      htmlContent = `
+        <div style="font-family: 'Times New Roman', Times, serif; font-size: 16px; line-height: 1.6; color: #374151; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; padding: 30px; border-radius: 12px; background-color: #ffffff;">
+          <p>Kính gửi <strong>${userName}</strong>,</p>
+          <p>Thư viện đã xác nhận bạn đã hoàn tất việc trả sách.</p>
+          
+          <h4 style="color: #111827; margin-bottom: 5px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Thông tin phiếu mượn:</h4>
+          <ul style="margin-top: 5px; list-style-type: none; padding-left: 0;">
+            <li><strong>Ngày mượn:</strong> ${borrowDateStr}</li>
+            <li><strong>Hạn trả:</strong> ${dueDateStr}</li>
+            <li><strong>Ngày trả thực tế:</strong> ${returnDateStr}</li>
+          </ul>
+
+          <h4 style="color: #111827; margin-bottom: 5px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Danh sách sách đã trả:</h4>
+          <ul style="margin-top: 5px; padding-left: 20px;">
+            <li style="color: #4f46e5; font-weight: bold;">${bookTitle}</li>
+          </ul>
+
+          <h4 style="color: #dc2626; margin-bottom: 5px; border-bottom: 1px solid #fecaca; padding-bottom: 5px;">Kết quả kiểm tra:</h4>
+          <ul style="margin-top: 5px; background-color: #fef2f2; padding: 15px 15px 15px 35px; border-radius: 8px; border: 1px solid #fca5a5; color: #991b1b;">
+            ${lateDaysText}
+            ${damageReasonText}
+            <li><strong>Tiền phạt:</strong> ${totalFine.toLocaleString()} VNĐ</li>
+            <li><strong>Trạng thái thanh toán:</strong> ${paymentStatusText}</li>
+          </ul>
+
+          ${paymentWarning}
+          <p style="margin-top: 20px;">Mọi thắc mắc vui lòng liên hệ quản trị viên thư viện.</p>
+          <p style="margin-bottom: 0;">Trân trọng,<br/><strong>Ban quản lý thư viện</strong></p>
+        </div>
+      `;
+    }
+
+    const mailOptions = {
+      from: `"Smart Library" <${process.env.EMAIL_USER}>`,
+      to: userEmail,
+      subject: '📚 [Smart Library] - Thông báo xác nhận trả sách',
+      html: htmlContent
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Đã gửi email xác nhận TRẢ sách tới: ${userEmail}`);
+  } catch (error) {
+    console.error('❌ Lỗi gửi email trả sách:', error.message);
+  }
+};
+
+// ==========================================
+// 4. HÀM CHẠY TÁC VỤ TỰ ĐỘNG (CRONJOB)
 // ==========================================
 const startCronJobs = () => {
   console.log('⏳ CronJob: Đã khởi động dịch vụ quét phiếu mượn tự động...');
@@ -104,7 +207,7 @@ const startCronJobs = () => {
 
         if (daysDiff === 1 && record.status === 'borrowed') {
           mailOptions = {
-            from: `"Thư Viện Thông Minh" <${process.env.EMAIL_USER}>`,
+            from: `"Smart Library" <${process.env.EMAIL_USER}>`,
             to: record.user_id.email,
             subject: '📚 Nhắc nhở: Sắp đến hạn trả sách!',
             html: `
@@ -129,7 +232,7 @@ const startCronJobs = () => {
           }
 
           mailOptions = {
-            from: `"Thư Viện Thông Minh" <${process.env.EMAIL_USER}>`,
+            from: `"Smart Library" <${process.env.EMAIL_USER}>`,
             to: record.user_id.email,
             subject: '⚠️ Cảnh báo: Quá hạn trả sách!',
             html: `
@@ -165,5 +268,7 @@ const startCronJobs = () => {
   });
 };
 
-// KẾT XUẤT CẢ 2 HÀM ĐỂ BÊN NGOÀI SỬ DỤNG
-module.exports = { startCronJobs, sendBorrowConfirmationEmail };
+// ==========================================
+// KẾT XUẤT CÁC HÀM ĐỂ BÊN NGOÀI SỬ DỤNG
+// ==========================================
+module.exports = { startCronJobs, sendBorrowConfirmationEmail, sendReturnConfirmationEmail };

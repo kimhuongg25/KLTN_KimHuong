@@ -16,7 +16,9 @@ const ManageBorrowsPage = () => {
   // --- 2. STATE DÀNH RIÊNG CHO HỘP THOẠI TRẢ SÁCH (MODAL) ---
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [currentRecord, setCurrentRecord] = useState(null);
-  const [fineInput, setFineInput] = useState(0);
+  const [damageFine, setDamageFine] = useState(0); 
+  const [damageReason, setDamageReason] = useState(''); // MỚI: State lưu lý do phạt
+  const [paymentStatus, setPaymentStatus] = useState('paid'); 
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
@@ -36,19 +38,20 @@ const ManageBorrowsPage = () => {
     }
   };
 
-  // --- 3. LOGIC LỌC & TÌM KIẾM DỮ LIỆU ---
   const filteredBorrows = borrows.filter(record => {
-    const username = record.user_id?.username?.toLowerCase() || '';
-    const bookTitle = record.book_id?.title?.toLowerCase() || '';
     const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = 
+      (record.user_id?._id || '').toLowerCase().includes(searchLower) ||
+      (record.user_id?.fullName || '').toLowerCase().includes(searchLower) ||
+      (record.user_id?.username || '').toLowerCase().includes(searchLower) ||
+      (record.user_id?.email || '').toLowerCase().includes(searchLower) ||
+      (record.book_id?.title || '').toLowerCase().includes(searchLower);
     
-    const matchesSearch = username.includes(searchLower) || bookTitle.includes(searchLower);
     const matchesStatus = filterStatus === 'all' || record.status === filterStatus;
     
     return matchesSearch && matchesStatus;
   });
 
-  // --- 4. HÀM XỬ LÝ NÚT BẤM ---
   const handleUpdateStatus = async (record, newStatus) => {
     if (newStatus === 'approved') {
       if (!window.confirm('Xác nhận duyệt cho mượn cuốn sách này?')) return;
@@ -57,9 +60,10 @@ const ManageBorrowsPage = () => {
       if (!window.confirm('Từ chối yêu cầu mượn sách này?')) return;
     } 
     else if (newStatus === 'returned') {
-      const bookPrice = record.book_id?.book_price || 50000;
       setCurrentRecord(record);
-      setFineInput(bookPrice * 0.5); 
+      setDamageFine(0); 
+      setDamageReason(''); // Đặt lại lý do trống mỗi lần mở
+      setPaymentStatus('paid'); 
       setIsReturnModalOpen(true); 
       return; 
     }
@@ -73,20 +77,43 @@ const ManageBorrowsPage = () => {
     }
   };
 
-  // --- 5. HÀM GỬI DỮ LIỆU TỪ HỘP THOẠI TRẢ SÁCH ---
   const submitReturnBook = async () => {
     try {
+      // BỔ SUNG: Truyền thêm damageReason xuống Backend
       await api.put(`/borrows/admin/status/${currentRecord._id}`, { 
         status: 'returned',
-        fine: { amount: Number(fineInput) || 0 } 
+        fine: { 
+          amount: Number(damageFine) || 0,
+          status: paymentStatus,
+          damageReason: damageReason 
+        } 
       });
-      alert('Đã xác nhận trả sách thành công!');
+      
+      alert(paymentStatus === 'unpaid' ? 'Đã thu hồi sách. Tài khoản độc giả đã bị Khóa do nợ tiền phạt!' : 'Đã xác nhận trả sách và thanh toán thành công!');
+      
       setIsReturnModalOpen(false);
       fetchBorrows(); 
     } catch (error) {
       console.error("Lỗi trả sách:", error);
       alert(error.response?.data?.message || 'Lỗi khi xác nhận trả sách');
     }
+  };
+
+  const calculateOverdueInfo = () => {
+    if (!currentRecord || !currentRecord.due_date) return { days: 0, fine: 0 };
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(currentRecord.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    
+    const timeDiff = today.getTime() - dueDate.getTime();
+    const daysLate = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    
+    if (daysLate > 0) {
+      return { days: daysLate, fine: daysLate * 5000 };
+    }
+    return { days: 0, fine: 0 };
   };
 
   const handleExportExcel = () => {
@@ -97,7 +124,7 @@ const ManageBorrowsPage = () => {
     const excelData = filteredBorrows.map((record, index) => ({
       'STT': index + 1,
       'Mã Phiếu': record._id.substring(record._id.length - 6).toUpperCase(),
-      'Tên Độc Giả': record.user_id?.username || 'Ẩn danh',
+      'Tên Độc Giả': record.user_id?.fullName || record.user_id?.username || 'Ẩn danh',
       'Email Độc Giả': record.user_id?.email || 'Không có',
       'Tên Sách': record.book_id?.title || 'Sách đã xóa',
       'Vị Trí Kệ': record.book_id?.shelf_location || 'Chưa xác định',
@@ -130,6 +157,7 @@ const ManageBorrowsPage = () => {
       case 'borrowed': return <span style={{ ...badgeStyle, backgroundColor: '#f3e8ff', color: '#9333ea', border: '1px solid #e9d5ff' }}>📚 Đang Mượn</span>;
       case 'returned': return <span style={{ ...badgeStyle, backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0' }}>✅ Đã Trả</span>;
       case 'rejected': return <span style={{ ...badgeStyle, backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>❌ Đã Hủy</span>;
+      case 'overdue': return <span style={{ ...badgeStyle, backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca' }}>⚠️ Quá Hạn</span>;
       default: return status;
     }
   };
@@ -171,7 +199,7 @@ const ManageBorrowsPage = () => {
             <label style={{ display: 'block', fontSize: '15px', fontWeight: 'bold', color: '#374151', marginBottom: '8px' }}>🔍 Tìm kiếm phiếu mượn</label>
             <input 
               type="text" 
-              placeholder="Nhập tên độc giả hoặc tên sách..." 
+              placeholder="Nhập ID, Họ tên, Email độc giả hoặc Tên sách..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ width: '100%', padding: '12px 14px', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none', boxSizing: 'border-box', fontSize: '15px', fontFamily: "'Times New Roman', Times, serif" }}
@@ -187,7 +215,7 @@ const ManageBorrowsPage = () => {
               <option value="all">Tất cả trạng thái</option>
               <option value="pending">⏳ Chờ duyệt</option>
               <option value="approved">🔵 Đã duyệt</option>
-              <option value="borrowed">📚 Đang mượn</option>
+              <option value="borrowed">📚 Đang mượn (Chưa trả)</option>
               <option value="returned">✅ Đã trả</option>
               <option value="rejected">❌ Đã hủy</option>
             </select>
@@ -202,17 +230,15 @@ const ManageBorrowsPage = () => {
                 <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                   <th style={{ padding: '16px 20px', textAlign: 'left', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Người Mượn</th>
                   <th style={{ padding: '16px 20px', textAlign: 'left', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Tên Sách</th>
-                  <th style={{ padding: '16px 20px', textAlign: 'left', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Vị trí Kệ</th>
-                  <th style={{ padding: '16px 20px', textAlign: 'center', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Ngày Đăng Ký</th>
+                  <th style={{ padding: '16px 20px', textAlign: 'center', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Hạn Trả</th>
                   <th style={{ padding: '16px 20px', textAlign: 'center', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Trạng Thái</th>
-                  <th style={{ padding: '16px 20px', textAlign: 'center', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Tiền Phạt</th>
                   <th style={{ padding: '16px 20px', textAlign: 'center', color: '#374151', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Hành Động</th>
                 </tr>
               </thead>
               <tbody style={{ divideY: '1px solid #e5e7eb' }}>
                 {filteredBorrows.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280', fontSize: '16px' }}>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280', fontSize: '16px' }}>
                       Không tìm thấy phiếu mượn nào phù hợp với điều kiện tìm kiếm.
                     </td>
                   </tr>
@@ -222,25 +248,18 @@ const ManageBorrowsPage = () => {
                       <td style={{ padding: '16px 20px' }}>
                         <div style={{ color: '#111827', fontWeight: 'bold', fontSize: '16px' }}>{record.user_id?.fullName || record.user_id?.username || 'User ẩn'}</div>
                         <div style={{ fontSize: '14px', color: '#6b7280' }}>{record.user_id?.email}</div>
+                        <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '4px' }}>ID: {record.user_id?._id?.substring(0, 8)}...</div>
                       </td>
                       <td style={{ padding: '16px 20px' }}>
-                        <div style={{ color: '#374151', fontWeight: 'bold', fontSize: '16px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={record.book_id?.title}>
+                        <div style={{ color: '#374151', fontWeight: 'bold', fontSize: '16px', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={record.book_id?.title}>
                           {record.book_id?.title || 'Sách đã xóa'}
                         </div>
                       </td>
-                      <td style={{ padding: '16px 20px', color: '#059669', fontWeight: 'bold', fontSize: '15px' }}>
-                        {record.book_id?.shelf_location || 'Chưa XĐ'}
-                      </td>
                       <td style={{ padding: '16px 20px', textAlign: 'center', color: '#4b5563', fontSize: '15px' }}>
-                        {new Date(record.createdAt).toLocaleDateString('vi-VN')}
+                        {record.due_date ? new Date(record.due_date).toLocaleDateString('vi-VN') : '---'}
                       </td>
                       <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                         {renderStatusBadge(record.status)}
-                      </td>
-                      <td style={{ padding: '16px 20px', textAlign: 'center' }}>
-                        <span style={{ color: record.fine?.amount > 0 ? '#dc2626' : '#9ca3af', fontWeight: record.fine?.amount > 0 ? 'bold' : 'normal', backgroundColor: record.fine?.amount > 0 ? '#fee2e2' : 'transparent', padding: record.fine?.amount > 0 ? '4px 8px' : '0', borderRadius: '6px' }}>
-                          {record.fine?.amount > 0 ? `${record.fine.amount.toLocaleString()} đ` : '---'}
-                        </span>
                       </td>
                       <td style={{ padding: '16px 20px', textAlign: 'center', minWidth: '220px' }}>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -258,9 +277,9 @@ const ManageBorrowsPage = () => {
                             <button onClick={() => handleUpdateStatus(record, 'borrowed')} style={{ ...actionBtnStyle, backgroundColor: '#8b5cf6', color: 'white' }}>Xác nhận Giao sách</button>
                           )}
 
-                          {/* Đang cầm sách (Chờ trả) */}
-                          {record.status === 'borrowed' && (
-                            <button onClick={() => handleUpdateStatus(record, 'returned')} style={{ ...actionBtnStyle, backgroundColor: '#10b981', color: 'white' }}>Xác nhận Thu hồi</button>
+                          {/* Đang cầm sách (Chờ trả) hoặc Quá hạn */}
+                          {(record.status === 'borrowed' || record.status === 'overdue') && (
+                            <button onClick={() => handleUpdateStatus(record, 'returned')} style={{ ...actionBtnStyle, backgroundColor: '#10b981', color: 'white' }}>Nhận Lại Sách</button>
                           )}
 
                           {/* Đã kết thúc */}
@@ -279,46 +298,102 @@ const ManageBorrowsPage = () => {
 
       </div>
 
-      {/* --- GIAO DIỆN HỘP THOẠI NHẬP TIỀN PHẠT --- */}
+      {/* --- GIAO DIỆN HỘP THOẠI TRẢ SÁCH (TỰ ĐỘNG TÍNH TOÁN & THU TIỀN) --- */}
       {isReturnModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(3px)' }}>
-          <div style={{ backgroundColor: '#ffffff', padding: '30px', borderRadius: '16px', width: '450px', maxWidth: '90%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e5e7eb' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#ffffff', padding: '30px', borderRadius: '16px', width: '500px', maxWidth: '90%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e5e7eb' }}>
             
-            <h3 style={{ marginTop: 0, color: '#111827', fontSize: '22px', display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
-              <span style={{ fontSize: '24px', marginRight: '10px' }}>✅</span> Xác nhận nhận lại sách
+            <h3 style={{ marginTop: 0, color: '#111827', fontSize: '24px', fontWeight: 'bold', borderBottom: '2px solid #f3f4f6', paddingBottom: '15px', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontSize: '26px', marginRight: '10px' }}>✅</span> Xác nhận Thu Hồi Sách
             </h3>
             
-            <p style={{ color: '#4b5563', fontSize: '16px', lineHeight: '1.6', marginBottom: '20px' }}>
-              Độc giả đang trả cuốn sách: <strong style={{ color: '#111827' }}>{currentRecord?.book_id?.title}</strong>
-            </p>
-            
-            <div style={{ backgroundColor: '#fffbeb', padding: '15px', borderRadius: '10px', border: '1px solid #fde68a', marginBottom: '20px' }}>
-              <p style={{ margin: 0, color: '#92400e', fontSize: '15px', lineHeight: '1.5' }}>
-                ⚠️ <strong>Lưu ý:</strong> Tiền phạt trễ hạn (nếu có) sẽ được hệ thống tính tự động. Bạn chỉ cần nhập phí phạt hư hỏng bên dưới.
-                <br/>Giá trị gốc của sách: <strong>{(currentRecord?.book_id?.book_price || 50000).toLocaleString()} VNĐ</strong>.
-                <br/><br/><i>Nếu sách hoàn toàn nguyên vẹn, hãy để là số 0.</i>
-              </p>
+            <div style={{ marginBottom: '20px', fontSize: '16px', color: '#374151', lineHeight: '1.8' }}>
+              <p style={{ margin: '5px 0' }}>Độc giả: <strong>{currentRecord?.user_id?.fullName || currentRecord?.user_id?.username}</strong></p>
+              <p style={{ margin: '5px 0' }}>Tên sách: <strong style={{ color: '#4f46e5' }}>{currentRecord?.book_id?.title}</strong></p>
+              
+              <div style={{ backgroundColor: '#f9fafb', padding: '15px', borderRadius: '8px', border: '1px solid #e5e7eb', marginTop: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span>Ngày đến hạn:</span>
+                  <strong>{currentRecord?.due_date ? new Date(currentRecord.due_date).toLocaleDateString('vi-VN') : '---'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span>Ngày trả thực tế:</span>
+                  <strong>{new Date().toLocaleDateString('vi-VN')}</strong>
+                </div>
+                
+                {/* HIỂN THỊ TỰ ĐỘNG SỐ NGÀY TRỄ VÀ TIỀN PHẠT */}
+                {calculateOverdueInfo().days > 0 ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#dc2626' }}>
+                      <span>Số ngày trễ:</span>
+                      <strong>{calculateOverdueInfo().days} ngày</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#dc2626' }}>
+                      <span>Phạt trả trễ (5k/ngày):</span>
+                      <strong>{calculateOverdueInfo().fine.toLocaleString()} VNĐ</strong>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', color: '#059669', fontWeight: 'bold', marginTop: '10px' }}>
+                    ✨ Độc giả trả sách đúng hạn
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div style={{ marginBottom: '25px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#374151', fontSize: '15px' }}>Tiền phạt hư hỏng/mất sách (VNĐ):</label>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#374151', fontSize: '15px' }}>Phí phạt do hư hỏng / mất sách (nếu có):</label>
               <input 
                 type="number" 
                 min="0"
-                value={fineInput} 
-                onChange={(e) => setFineInput(e.target.value)} 
-                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '2px solid #e5e7eb', outline: 'none', fontSize: '16px', boxSizing: 'border-box', transition: 'border-color 0.2s', color: '#111827', fontWeight: 'bold', fontFamily: "'Times New Roman', Times, serif" }}
+                value={damageFine} 
+                onChange={(e) => setDamageFine(e.target.value)} 
+                placeholder="Nhập 0 nếu sách nguyên vẹn"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '2px solid #e5e7eb', outline: 'none', fontSize: '16px', boxSizing: 'border-box', marginBottom: Number(damageFine) > 0 ? '10px' : '0', transition: 'border-color 0.2s', color: '#111827', fontWeight: 'bold', fontFamily: "'Times New Roman', Times, serif" }}
                 onFocus={(e) => e.target.style.borderColor = '#4f46e5'}
                 onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
               />
+              
+              {/* BỔ SUNG: Ô nhập lý do phạt hiển thị tự động khi có tiền phạt */}
+              {Number(damageFine) > 0 && (
+                <input 
+                  type="text" 
+                  value={damageReason} 
+                  onChange={(e) => setDamageReason(e.target.value)} 
+                  placeholder="Nhập lý do phạt (VD: Rách bìa, Mất trang...)"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '2px solid #fca5a5', outline: 'none', fontSize: '16px', boxSizing: 'border-box', backgroundColor: '#fff1f2', color: '#991b1b', fontWeight: 'bold', fontFamily: "'Times New Roman', Times, serif" }}
+                />
+              )}
             </div>
+
+            {/* TỔNG TIỀN PHẠT & LỰA CHỌN THANH TOÁN (Chỉ hiện khi có phát sinh tiền phạt) */}
+            {(calculateOverdueInfo().fine + Number(damageFine) > 0) && (
+              <div style={{ backgroundColor: '#fff1f2', padding: '15px', borderRadius: '8px', border: '1px solid #fecdd3', marginBottom: '25px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#be123c', fontWeight: 'bold', marginBottom: '15px' }}>
+                  <span>TỔNG TIỀN CẦN THU:</span>
+                  <span>{(calculateOverdueInfo().fine + Number(damageFine)).toLocaleString()} VNĐ</span>
+                </div>
+                
+                <label style={{ display: 'block', fontWeight: 'bold', color: '#9f1239', marginBottom: '10px' }}>Trạng thái thu tiền phạt:</label>
+                <div style={{ display: 'flex', gap: '15px', flexDirection: 'column' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#065f46', fontWeight: 'bold' }}>
+                    <input type="radio" value="paid" checked={paymentStatus === 'paid'} onChange={() => setPaymentStatus('paid')} style={{ transform: 'scale(1.2)' }}/>
+                    Đã thanh toán đủ (Hoàn tất giao dịch)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#9f1239', fontWeight: 'bold' }}>
+                    <input type="radio" value="unpaid" checked={paymentStatus === 'unpaid'} onChange={() => setPaymentStatus('unpaid')} style={{ transform: 'scale(1.2)' }}/>
+                    Chưa nộp phạt (Khóa tài khoản mượn sách)
+                  </label>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
               <button onClick={() => setIsReturnModalOpen(false)} style={{ padding: '10px 20px', border: '1px solid #d1d5db', backgroundColor: '#ffffff', color: '#374151', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', fontFamily: "'Times New Roman', Times, serif" }}>
                 Hủy bỏ
               </button>
               <button onClick={submitReturnBook} style={{ padding: '10px 20px', border: 'none', backgroundColor: '#10b981', color: '#ffffff', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)', fontFamily: "'Times New Roman', Times, serif" }}>
-                Xác nhận Trả & Lưu
+                Xác nhận Hoàn Tất
               </button>
             </div>
 

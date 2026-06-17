@@ -7,7 +7,7 @@ const api = axios.create({
 
 // Hàm "gác cổng": Tự động đính kèm Token vào mỗi yêu cầu gửi đi
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
