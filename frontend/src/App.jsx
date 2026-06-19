@@ -14,12 +14,16 @@ import ManageCategoriesPage from './pages/ManageCategoriesPage';
 import ManageUsersPage from './pages/ManageUsersPage'; 
 import ManageReviewsPage from './pages/ManageReviewsPage'; 
 
-// 1. IMPORT CHATBOT WIDGET VÀO APP
+// IMPORT CHATBOT WIDGET VÀO APP
 import ChatbotWidget from './components/ChatbotWidget';
 
 // BỔ SUNG: Import component ScrollToTop
 import ScrollToTop from './components/ScrollToTop';
 import ManageFinesPage from './pages/ManageFinesPage';
+
+// 1. IMPORT COMPONENT NỘI QUY THƯ VIỆN (DẤU ?) MỚI TẠO
+import LibraryRules from './components/LibraryRules';
+
 function App() {
   return (
     <Router>
@@ -48,8 +52,11 @@ function App() {
         <Route path="/admin/fines" element={<ManageFinesPage />} />
       </Routes>
       
-      {/* 2. ĐẶT CHATBOT Ở ĐÂY (Nằm ngoài Routes để nó luôn hiển thị ở mọi trang) */}
+      {/* ĐẶT CHATBOT Ở ĐÂY (Nằm ngoài Routes để nó luôn hiển thị ở mọi trang) */}
       <ChatbotWidget />
+      
+      {/* 2. ĐẶT NÚT NỘI QUY Ở ĐÂY (Sẽ trôi nổi ở góc dưới bên trái) */}
+      <LibraryRules />
       
     </Router>
   );
