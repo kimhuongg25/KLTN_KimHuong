@@ -13,18 +13,40 @@ const ChatbotWidget = () => {
     ? "Xin chào Admin! Mình là Trợ lý Quản trị. Sếp cần xem báo cáo, thống kê hay tra cứu kho sách hôm nay?"
     : "Xin chào! Mình là Trợ lý AI của Smart Library. Bạn cần tìm sách gì hay muốn hỏi về nội quy thư viện không?";
   const apiUrl = isAdmin ? '/chatbot/admin' : '/chatbot';
+  
+  // Tạo tên khóa lưu trữ riêng biệt cho từng vai trò (tránh lẫn lộn lịch sử)
+  const storageKey = `chat_history_${user?.role || 'guest'}`;
 
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([{ text: welcomeText, isBot: true }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // Reset chat khi chuyển tài khoản
-  useEffect(() => {
-    setMessages([{ text: welcomeText, isBot: true }]);
-  }, [user, welcomeText]);
+  // 1. KHỞI TẠO STATE TIN NHẮN TỪ LOCAL STORAGE
+  const [messages, setMessages] = useState(() => {
+    const savedChat = localStorage.getItem(storageKey);
+    if (savedChat) {
+      return JSON.parse(savedChat);
+    }
+    return [{ text: welcomeText, isBot: true }];
+  });
 
+  // 2. XỬ LÝ KHI CHUYỂN TÀI KHOẢN (Nạp lại đúng lịch sử của tài khoản đó)
+  useEffect(() => {
+    const savedChat = localStorage.getItem(storageKey);
+    if (savedChat) {
+      setMessages(JSON.parse(savedChat));
+    } else {
+      setMessages([{ text: welcomeText, isBot: true }]);
+    }
+  }, [user, welcomeText, storageKey]);
+
+  // 3. LƯU VÀO LOCAL STORAGE MỖI KHI CÓ TIN NHẮN MỚI
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(messages));
+  }, [messages, storageKey]);
+
+  // Tự động cuộn xuống tin nhắn cuối
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -41,7 +63,7 @@ const ChatbotWidget = () => {
     setIsLoading(true);
 
     try {
-      // Tự động gọi đúng luồng API dựa trên chức vụ
+      // Gọi API tương ứng với Role
       const res = await api.post(apiUrl, { 
         message: userMsg,
         history: currentHistory, 
@@ -53,6 +75,15 @@ const ChatbotWidget = () => {
       setMessages(prev => [...prev, { text: "Xin lỗi, kết nối AI đang bị lỗi. Bạn thử lại sau nhé!", isBot: true }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 4. HÀM XÓA LỊCH SỬ CHAT
+  const handleClearChat = () => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện này?")) {
+      const resetMsg = [{ text: welcomeText, isBot: true }];
+      setMessages(resetMsg);
+      localStorage.setItem(storageKey, JSON.stringify(resetMsg));
     }
   };
 
@@ -83,7 +114,13 @@ const ChatbotWidget = () => {
                 </span>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '20px', cursor: 'pointer' }}>✖</button>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* Nút Xóa Lịch Sử */}
+              <button onClick={handleClearChat} style={{ background: 'none', border: 'none', color: 'white', fontSize: '15px', cursor: 'pointer', opacity: 0.9 }} title="Xóa lịch sử chat">
+                🗑️
+              </button>
+              <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '20px', cursor: 'pointer' }}>✖</button>
+            </div>
           </div>
 
           {/* Body Chat */}
