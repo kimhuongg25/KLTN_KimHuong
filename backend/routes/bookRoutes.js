@@ -44,4 +44,6 @@ router.post('/', protect, upload.single('cover_image'), bookController.createBoo
 router.put('/:id', protect, upload.single('cover_image'), bookController.updateBook);
 router.delete('/:id', protect, bookController.deleteBook);
 
+router.get('/personalized/recommendations', protect, bookController.getPersonalizedRecommendations);
+
 module.exports = router;

@@ -234,3 +234,62 @@ exports.deleteBook = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// ==========================================
+// TÍNH NĂNG MỚI: GỢI Ý CÁ NHÂN HÓA (CONTENT-BASED FILTERING)
+// ==========================================
+
+// [GET] Lấy danh sách sách gợi ý dựa trên lịch sử tương tác của Độc giả
+exports.getPersonalizedRecommendations = async (req, res) => {
+  try {
+    const user_id = req.user._id;
+
+    // 1. Lấy 10 hành vi gần nhất của user này trong DB
+    const recentActivities = await UserActivity.find({ user_id })
+      .populate('book_id')
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    // 2. Phân tích các thể loại (genre) người dùng tương tác nhiều nhất
+    const favoriteGenres = [];
+    recentActivities.forEach(act => {
+      if (act.book_id && act.book_id.genre) {
+        favoriteGenres.push(act.book_id.genre);
+      }
+    });
+
+    // Đếm tần suất xuất hiện của từng thể loại
+    const genreCounts = favoriteGenres.reduce((acc, genre) => {
+      acc[genre] = (acc[genre] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Sắp xếp thể loại được tương tác từ nhiều nhất đến ít nhất
+    const sortedGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]);
+
+    let recommendedBooks = [];
+
+    if (sortedGenres.length > 0) {
+      // 3. Tìm sách thuộc thể loại yêu thích nhất nhưng loại trừ các cuốn đã xem/mượn gần đây
+      const interactedBookIds = recentActivities.map(act => act.book_id?._id);
+
+      recommendedBooks = await Book.find({
+        genre: { $in: sortedGenres.slice(0, 2) }, // Lấy 2 thể loại đứng đầu xu hướng cá nhân
+        _id: { $nin: interactedBookIds },        // Tránh gợi ý lại sách họ vừa tương tác
+        available_quantity: { $gt: 0 }            // Ưu tiên sách còn trong kho
+      }).limit(4); // Lấy tối đa 4 cuốn để hiển thị đẹp 1 hàng trên giao diện
+    }
+
+    // 4. Fallback: Nếu độc giả mới tạo tài khoản (chưa có lịch sử), lấy 4 cuốn sách mới nhất làm gợi ý
+    if (recommendedBooks.length === 0) {
+      recommendedBooks = await Book.find({ available_quantity: { $gt: 0 } })
+        .sort({ createdAt: -1 })
+        .limit(4);
+    }
+
+    res.status(200).json(recommendedBooks);
+  } catch (error) {
+    console.error("Lỗi khi lấy sách gợi ý:", error);
+    res.status(500).json({ error: error.message });
+  }
+};

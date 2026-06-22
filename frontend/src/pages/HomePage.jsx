@@ -14,6 +14,9 @@ const HomePage = () => {
   const navigate = useNavigate();
 
   const [selectedCategory, setSelectedCategory] = useState('');
+  
+  // TÍNH NĂNG MỚI: State lưu sách gợi ý cá nhân hóa
+  const [recommendedBooks, setRecommendedBooks] = useState([]);
 
   // 2. TÁCH HÀM GỌI API ĐỂ CÓ THỂ TÁI SỬ DỤNG KHI "XÓA BỘ LỌC"
   const fetchAllData = async () => {
@@ -35,6 +38,24 @@ const HomePage = () => {
   useEffect(() => {
     fetchAllData();
   }, []);
+
+  // TÍNH NĂNG MỚI: Hàm lấy sách gợi ý khi người dùng đăng nhập
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      if (user && user.role === 'user') {
+        try {
+          const res = await api.get('/books/personalized/recommendations');
+          setRecommendedBooks(res.data);
+        } catch (error) {
+          console.error("Lỗi khi tải gợi ý cá nhân hóa:", error);
+        }
+      } else {
+        setRecommendedBooks([]);
+      }
+    };
+
+    fetchRecommendations();
+  }, [user]);
 
   // 3. HÀM NHẬN KẾT QUẢ TỪ SMART SEARCH BAR TRUYỀN LÊN
   const handleSearchResults = (results) => {
@@ -130,6 +151,83 @@ const HomePage = () => {
           </div>
         </div>
 
+        {/* ========================================================= */}
+        {/* KHU VỰC 1: GỢI Ý CÁ NHÂN HÓA (CHỈ HIỆN KHI ĐỘC GIẢ ĐÃ ĐĂNG NHẬP) */}
+        {/* ========================================================= */}
+        {user && user.role === 'user' && recommendedBooks.length > 0 && (
+          <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '16px', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.1)', marginBottom: '35px', border: '1px solid #e0e7ff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #ebf0ff', paddingBottom: '10px' }}>
+              <span style={{ fontSize: '24px' }}>✨</span>
+              <h3 style={{ margin: 0, color: '#4f46e5', fontSize: '22px', fontWeight: 'bold' }}>
+                Gợi Ý Dành Riêng Cho {user.fullName || user.username}
+              </h3>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '25px' }}>
+              {recommendedBooks.map((book) => (
+                <div 
+                  key={`rec-${book._id}`} 
+                  className="book-card"
+                  style={{ backgroundColor: '#ffffff', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)', border: '1px solid #e0e7ff' }}
+                >
+                  <div 
+                    onClick={() => navigate(`/book/${book._id}`)}
+                    style={{ cursor: 'pointer', height: '320px', backgroundColor: '#f9fafb', position: 'relative' }}
+                  >
+                    {book.cover_image ? (
+                      <img src={book.cover_image} alt={book.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '14px' }}>Chưa có ảnh</div>
+                    )}
+                    {(book.category_id?.category_name || book.genre) && (
+                      <span style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: 'rgba(79, 70, 229, 0.9)', color: 'white', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backdropFilter: 'blur(4px)' }}>
+                        {book.category_id?.category_name || book.genre?.split(',')[0]}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ padding: '20px', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                    <h3 
+                      onClick={() => navigate(`/book/${book._id}`)}
+                      className="line-clamp-2" 
+                      style={{ fontSize: '18px', margin: '0 0 8px 0', color: '#111827', cursor: 'pointer', lineHeight: '1.4', fontWeight: 'bold' }}
+                      title={book.title}
+                    >
+                      {book.title}
+                    </h3>
+                    <p style={{ color: '#6b7280', fontSize: '14px', margin: '0 0 15px 0', fontWeight: 'bold' }}>
+                      {book.author}
+                    </p>
+                    
+                    <div style={{ marginTop: 'auto' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px', fontSize: '13px', fontWeight: 'bold' }}>
+                        <span style={{ 
+                          display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', marginRight: '6px',
+                          backgroundColor: book.available_quantity > 0 ? '#10b981' : '#ef4444' 
+                        }}></span>
+                        <span style={{ color: book.available_quantity > 0 ? '#059669' : '#dc2626' }}>
+                          {book.available_quantity > 0 ? `Sẵn sàng mượn (${book.available_quantity})` : 'Tạm hết sách'}
+                        </span>
+                      </div>
+
+                      <button 
+                        className="btn-detail"
+                        onClick={() => navigate(`/book/${book._id}`)} 
+                        style={{ width: '100%', padding: '12px 0', backgroundColor: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px', fontFamily: "'Times New Roman', Times, serif" }}
+                      >
+                        Xem Chi Tiết
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* KHU VỰC 2: TOÀN BỘ KHO SÁCH TRONG THƯ VIỆN (MẶC ĐỊNH)       */}
+        {/* ========================================================= */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ fontSize: '22px', color: '#1f2937', margin: 0, fontWeight: '700' }}>
             {selectedCategory !== '' ? 'Kết Quả Lọc' : '📚 Sách Mới Cập Nhật'}
