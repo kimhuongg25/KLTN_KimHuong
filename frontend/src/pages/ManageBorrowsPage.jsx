@@ -18,10 +18,14 @@ const ManageBorrowsPage = () => {
   const [currentRecord, setCurrentRecord] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('paid'); 
   
-  // LOGIC MỚI: State quản lý lý do và mức phạt tự động
   const [damageLevel, setDamageLevel] = useState('none');
   const [customReason, setCustomReason] = useState('');
   const [damageFine, setDamageFine] = useState(0); 
+
+  // --- 3. STATE DÀNH RIÊNG CHO HỘP THOẠI TỪ CHỐI (MODAL MỚI) ---
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('Đã vượt quá số lượng sách được mượn tối đa');
+  const [customRejectReason, setCustomRejectReason] = useState('');
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
@@ -60,11 +64,15 @@ const ManageBorrowsPage = () => {
       if (!window.confirm('Xác nhận duyệt cho mượn cuốn sách này?')) return;
     } 
     else if (newStatus === 'rejected') {
-      if (!window.confirm('Từ chối yêu cầu mượn sách này?')) return;
+      // MỞ HỘP THOẠI TỪ CHỐI
+      setCurrentRecord(record);
+      setRejectReason('Đã vượt quá số lượng sách được mượn tối đa');
+      setCustomRejectReason('');
+      setIsRejectModalOpen(true);
+      return; 
     } 
     else if (newStatus === 'returned') {
       setCurrentRecord(record);
-      // Reset toàn bộ form phạt khi mở hộp thoại mới
       setDamageLevel('none');
       setCustomReason('');
       setDamageFine(0); 
@@ -82,7 +90,29 @@ const ManageBorrowsPage = () => {
     }
   };
 
-  // HÀM XỬ LÝ KHI CHỌN MỨC ĐỘ HƯ HỎNG TỪ DROPDOWN
+  // HÀM XỬ LÝ GỬI API TỪ CHỐI
+  const submitRejectBook = async () => {
+    const finalReason = rejectReason === 'other' ? customRejectReason : rejectReason;
+    
+    if (rejectReason === 'other' && !finalReason.trim()) {
+      return alert("Vui lòng nhập lý do từ chối chi tiết!");
+    }
+
+    try {
+      await api.put(`/borrows/admin/status/${currentRecord._id}`, { 
+        status: 'rejected',
+        rejectReason: finalReason 
+      });
+      
+      alert('Đã từ chối phiếu mượn và gửi Email thông báo tới độc giả!');
+      setIsRejectModalOpen(false);
+      fetchBorrows(); 
+    } catch (error) {
+      alert(error.response?.data?.message || 'Lỗi khi từ chối phiếu mượn');
+    }
+  };
+
+  // HÀM XỬ LÝ KHI CHỌN MỨC ĐỘ HƯ HỎNG TỪ DROPDOWN (KHI TRẢ SÁCH)
   const handleDamageLevelChange = (e) => {
     const level = e.target.value;
     setDamageLevel(level);
@@ -98,16 +128,16 @@ const ManageBorrowsPage = () => {
         setCustomReason('');
         break;
       case 'minor':
-        setDamageFine(bookPrice * 0.2); // Phạt 20%
+        setDamageFine(bookPrice * 0.2); 
         break;
       case 'moderate':
-        setDamageFine(bookPrice * 0.5); // Phạt 50%
+        setDamageFine(bookPrice * 0.5); 
         break;
       case 'severe':
-        setDamageFine(bookPrice * 1.0); // Phạt 100% (Mất sách)
+        setDamageFine(bookPrice * 1.0); 
         break;
       case 'other':
-        setDamageFine(0); // Để Admin tự gõ
+        setDamageFine(0); 
         break;
       default:
         setDamageFine(0);
@@ -116,7 +146,6 @@ const ManageBorrowsPage = () => {
 
   const submitReturnBook = async () => {
     try {
-      // Xác định lý do chuỗi text cuối cùng để gửi xuống DB
       let finalReason = '';
       if (damageLevel === 'minor') finalReason = 'Rách bìa / Trầy xước nhẹ';
       else if (damageLevel === 'moderate') finalReason = 'Rách, mất vài trang / Ướt sách';
@@ -341,6 +370,54 @@ const ManageBorrowsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* --- GIAO DIỆN HỘP THOẠI TỪ CHỐI DUYỆT PHIẾU --- */}
+      {isRejectModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#ffffff', padding: '30px', borderRadius: '16px', width: '500px', maxWidth: '90%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e5e7eb' }}>
+            
+            <h3 style={{ marginTop: 0, color: '#991b1b', fontSize: '22px', fontWeight: 'bold', borderBottom: '2px solid #fecaca', paddingBottom: '15px', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontSize: '26px', marginRight: '10px' }}>❌</span> Từ Chối Phiếu Mượn
+            </h3>
+            
+            <div style={{ marginBottom: '20px', fontSize: '15px', color: '#374151' }}>
+              <p>Hệ thống sẽ gửi Email thông báo việc từ chối này tới độc giả <strong>{currentRecord?.user_id?.fullName || currentRecord?.user_id?.username}</strong>.</p>
+              
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#111827', marginTop: '15px' }}>Chọn lý do từ chối:</label>
+              <select 
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #d1d5db', outline: 'none', fontSize: '15px', boxSizing: 'border-box', marginBottom: '10px', backgroundColor: '#f9fafb', fontFamily: "'Times New Roman', Times, serif" }}
+              >
+                <option value="Đã vượt quá số lượng sách được mượn tối đa">Đã vượt quá số lượng sách được mượn tối đa</option>
+                <option value="Bạn đang có sách quá hạn chưa trả">Bạn đang có sách quá hạn chưa trả</option>
+                <option value="Tài khoản của bạn đang bị khóa do nợ tiền phạt">Tài khoản của bạn đang bị khóa do nợ tiền phạt</option>
+                <option value="Sách hiện tại đang bảo trì hoặc không đủ điều kiện cho mượn">Sách hiện tại đang bảo trì / không đủ điều kiện cho mượn</option>
+                <option value="other">Lý do khác...</option>
+              </select>
+
+              {rejectReason === 'other' && (
+                <textarea 
+                  value={customRejectReason} 
+                  onChange={(e) => setCustomRejectReason(e.target.value)} 
+                  placeholder="Nhập lý do chi tiết..."
+                  rows="3"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '2px solid #fca5a5', outline: 'none', fontSize: '15px', boxSizing: 'border-box', backgroundColor: '#fff1f2', color: '#991b1b', fontFamily: "'Times New Roman', Times, serif", resize: 'none' }}
+                />
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button onClick={() => setIsRejectModalOpen(false)} style={{ padding: '10px 20px', border: '1px solid #d1d5db', backgroundColor: '#ffffff', color: '#374151', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', fontFamily: "'Times New Roman', Times, serif" }}>
+                Hủy
+              </button>
+              <button onClick={submitRejectBook} style={{ padding: '10px 20px', border: 'none', backgroundColor: '#ef4444', color: '#ffffff', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)', fontFamily: "'Times New Roman', Times, serif" }}>
+                Từ chối & Gửi Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- GIAO DIỆN HỘP THOẠI TRẢ SÁCH (TỰ ĐỘNG TÍNH TOÁN THEO LÝ DO) --- */}
       {isReturnModalOpen && (

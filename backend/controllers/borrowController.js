@@ -3,8 +3,9 @@ const Book = require('../models/Book');
 const UserActivity = require('../models/UserActivity'); 
 const User = require('../models/User'); // Nhúng Model User để khóa thẻ
 
-// BỔ SUNG: Nhúng thêm hàm gửi Email Xác nhận trả sách
-const { sendBorrowConfirmationEmail, sendReturnConfirmationEmail } = require('../services/cronService'); 
+
+// BỔ SUNG: Nhúng thêm hàm gửi Email Từ chối (sendRejectionEmail)
+const { sendBorrowConfirmationEmail, sendReturnConfirmationEmail, sendRejectionEmail, sendPaymentConfirmationEmail } = require('../services/cronService');
 
 // 1. [POST] Gửi yêu cầu mượn sách (Độc giả)
 exports.borrowBook = async (req, res) => {
@@ -100,7 +101,7 @@ exports.getAllBorrowRequests = async (req, res) => {
 exports.updateBorrowStatus = async (req, res) => {
   try {
     const recordId = req.params.record_id || req.params.id; 
-    const { status, fine } = req.body; 
+    const { status, fine, rejectReason } = req.body; // Bổ sung nhận rejectReason từ Frontend
 
     const record = await BorrowRecord.findById(recordId);
     if (!record) return res.status(404).json({ message: "Không tìm thấy phiếu mượn." });
@@ -166,10 +167,31 @@ exports.updateBorrowStatus = async (req, res) => {
     }
     
     // ==========================================
-    // TH2: ADMIN CHỦ ĐỘNG TỪ CHỐI
+    // TH2: ADMIN CHỦ ĐỘNG TỪ CHỐI (ĐÃ ĐƯỢC NÂNG CẤP)
     // ==========================================
     else if (status === 'rejected' && record.status === 'pending') {
       record.status = 'rejected';
+      
+      // Lấy lý do từ chối do Frontend gửi lên (mặc định nếu trống)
+      const finalRejectReason = rejectReason || "Chưa đáp ứng điều kiện mượn sách của thư viện.";
+
+      // Nếu Model của bạn có trường lưu note/ghi chú thì có thể lưu lại
+      if (record.note !== undefined) {
+          record.note = finalRejectReason;
+      }
+
+      // Nạp thông tin Sách & Độc giả để chuẩn bị nội dung gửi Email
+      await record.populate('user_id', 'fullName username email');
+      await record.populate('book_id', 'title');
+
+      // Chạy ngầm hàm gửi Email
+      try {
+        if (record.user_id?.email) {
+            sendRejectionEmail(record, finalRejectReason);
+        }
+      } catch (emailErr) {
+        console.error("Lỗi gửi mail từ chối:", emailErr);
+      }
     }
     
     // ==========================================
@@ -381,7 +403,11 @@ exports.getAllFines = async (req, res) => {
 exports.payFine = async (req, res) => {
   try {
     const recordId = req.params.id;
-    const record = await BorrowRecord.findById(recordId);
+    
+    // Nạp sẵn dữ liệu Độc giả và Sách để dùng cho việc gửi Email
+    const record = await BorrowRecord.findById(recordId)
+      .populate('user_id', 'fullName username email')
+      .populate('book_id', 'title');
 
     if (!record || !record.fine) {
       return res.status(404).json({ message: "Không tìm thấy thông tin phạt." });
@@ -392,9 +418,9 @@ exports.payFine = async (req, res) => {
     await record.save();
 
     // 2. KIỂM TRA ĐỂ TỰ ĐỘNG MỞ KHÓA TÀI KHOẢN
-    // Đếm xem độc giả này CÒN khoản nợ hoặc phiếu quá hạn nào khác không
+    // Lưu ý: Do đã populate user_id ở trên, nên ta phải trỏ vào record.user_id._id
     const remainingUnpaid = await BorrowRecord.countDocuments({
-      user_id: record.user_id,
+      user_id: record.user_id._id,
       $or: [
         { "fine.status": 'unpaid' },
         { status: 'overdue' }
@@ -403,11 +429,23 @@ exports.payFine = async (req, res) => {
 
     // 3. Nếu KHÔNG còn khoản nợ nào -> Mở khóa thẻ ngay lập tức
     let unlockMessage = "";
+    let isUnlocked = false; // Biến kiểm soát trạng thái để báo vào Email
+
     if (remainingUnpaid === 0) {
-      await User.findByIdAndUpdate(record.user_id, { status: 'active' });
+      await User.findByIdAndUpdate(record.user_id._id, { status: 'active' });
       unlockMessage = "Tài khoản độc giả đã được hệ thống tự động Mở Khóa.";
+      isUnlocked = true;
     } else {
       unlockMessage = `Độc giả vẫn còn ${remainingUnpaid} khoản phạt/quá hạn khác chưa xử lý.`;
+    }
+
+    // 4. CHẠY NGẦM HÀM GỬI EMAIL BIÊN LAI
+    try {
+      if (record.user_id?.email) {
+        sendPaymentConfirmationEmail(record, isUnlocked);
+      }
+    } catch (emailErr) {
+      console.error("Lỗi gửi mail biên lai thanh toán:", emailErr);
     }
 
     res.status(200).json({ 
@@ -415,6 +453,7 @@ exports.payFine = async (req, res) => {
       record 
     });
   } catch (error) {
+    console.error("Lỗi xác nhận đóng phạt:", error);
     res.status(500).json({ error: error.message });
   }
 };

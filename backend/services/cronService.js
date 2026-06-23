@@ -269,6 +269,114 @@ const startCronJobs = () => {
 };
 
 // ==========================================
+// 5. HÀM GỬI EMAIL TỪ CHỐI MƯỢN SÁCH (MỚI BỔ SUNG)
+// ==========================================
+const sendRejectionEmail = async (record, reason) => {
+  try {
+    const userEmail = record.user_id?.email;
+    const readerName = record.user_id?.fullName || record.user_id?.username || 'Độc giả';
+    const bookTitle = record.book_id?.title || 'Sách';
+
+    if (!userEmail) return console.log("⚠️ Không tìm thấy email của độc giả để gửi thông báo từ chối.");
+
+    const mailOptions = {
+      from: `"Smart Library" <${process.env.EMAIL_USER}>`,
+      to: userEmail,
+      subject: `[Smart Library] Thông báo TỪ CHỐI yêu cầu mượn sách`,
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="background-color: #ef4444; color: white; padding: 20px; text-align: center;">
+            <h2 style="margin: 0; font-size: 22px;">Thông Báo Từ Chối Duyệt Sách</h2>
+          </div>
+          <div style="padding: 25px; background-color: #ffffff;">
+            <p>Kính gửi <strong>${readerName}</strong>,</p>
+            <p>Hệ thống thư viện đã tiếp nhận yêu cầu mượn sách <strong>"${bookTitle}"</strong> của bạn. Tuy nhiên, yêu cầu hiện chưa được phê duyệt vì chưa đáp ứng điều kiện mượn sách của thư viện.</p>
+            
+            <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <strong style="color: #991b1b; display: block; margin-bottom: 5px;">Lý do từ chối:</strong>
+              <p style="color: #b91c1c; font-weight: bold; margin: 0; font-size: 15px;">${reason}</p>
+            </div>
+
+            <p>Vui lòng hoàn thành các nghĩa vụ còn tồn đọng hoặc liên hệ thư viện để được hỗ trợ. Sau khi khắc phục, bạn có thể gửi lại yêu cầu mượn sách.</p>
+            <br/>
+            <p style="margin-bottom: 0;">Trân trọng,<br><strong>Ban Quản lý Thư viện</strong></p>
+          </div>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Đã gửi Email thông báo từ chối cho độc giả: ${userEmail}`);
+  } catch (error) {
+    console.error('❌ Lỗi khi gửi email từ chối:', error.message);
+  }
+};
+
+
+// ==========================================
+// 6. HÀM GỬI EMAIL XÁC NHẬN THANH TOÁN & MỞ KHÓA TÀI KHOẢN
+// ==========================================
+const sendPaymentConfirmationEmail = async (record, isUnlocked) => {
+  try {
+    const userEmail = record.user_id?.email;
+    const readerName = record.user_id?.fullName || record.user_id?.username || 'Độc giả';
+    const bookTitle = record.book_id?.title || 'Sách';
+    const fineAmount = record.fine?.amount || 0;
+
+    if (!userEmail) return console.log("⚠️ Không tìm thấy email của độc giả để gửi biên lai thanh toán.");
+
+    // Tùy biến thông báo mở khóa dựa trên việc Độc giả đã sạch nợ hay chưa
+    const unlockMessage = isUnlocked
+      ? `<div style="background-color: #d1fae5; color: #065f46; padding: 15px; border-radius: 8px; border: 1px solid #a7f3d0; margin-top: 20px;">
+          <strong>🎉 Xin chúc mừng!</strong> Tài khoản của bạn đã được hệ thống <strong>MỞ KHÓA</strong>. Bạn đã có thể truy cập thư viện và mượn những cuốn sách mới ngay bây giờ.
+         </div>`
+      : `<div style="background-color: #fef3c7; color: #92400e; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; margin-top: 20px;">
+          <strong>⚠️ Lưu ý:</strong> Bạn vẫn còn các khoản phạt hoặc sách quá hạn khác chưa xử lý. Vui lòng hoàn tất để hệ thống mở khóa thẻ mượn sách nhé!
+         </div>`;
+
+    const mailOptions = {
+      from: `"Smart Library" <${process.env.EMAIL_USER}>`,
+      to: userEmail,
+      subject: `[Smart Library] Biên lai điện tử - Xác nhận thanh toán thành công`,
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #374151; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="background-color: #10b981; color: white; padding: 24px; text-align: center;">
+            <h2 style="margin: 0; font-size: 22px;">XÁC NHẬN THANH TOÁN PHẠT</h2>
+          </div>
+          <div style="padding: 30px; background-color: #ffffff;">
+            <p>Kính gửi <strong>${readerName}</strong>,</p>
+            <p>Thư viện xác nhận đã nhận được khoản thanh toán tiền phạt của bạn. Dưới đây là thông tin chi tiết:</p>
+            
+            <ul style="background-color: #f9fafb; padding: 15px 15px 15px 35px; border-radius: 8px; border: 1px solid #e5e7eb;">
+              <li>Sách vi phạm: <strong>${bookTitle}</strong></li>
+              <li>Mã phiếu: <strong>#${record._id.toString().substring(record._id.toString().length - 6).toUpperCase()}</strong></li>
+              <li>Số tiền đã đóng: <strong style="color: #059669;">${fineAmount.toLocaleString()} VNĐ</strong></li>
+              <li>Trạng thái: <strong style="color: #059669;">Thành công</strong></li>
+            </ul>
+
+            ${unlockMessage}
+
+            <p style="margin-top: 20px;">Cảm ơn bạn đã hợp tác và tuân thủ quy định của thư viện.</p>
+            <p style="margin-bottom: 0;">Trân trọng,<br><strong>Ban Quản lý Thư viện</strong></p>
+          </div>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Đã gửi Email biên lai thanh toán cho độc giả: ${userEmail}`);
+  } catch (error) {
+    console.error('❌ Lỗi khi gửi email thanh toán:', error.message);
+  }
+};
+
+// ==========================================
 // KẾT XUẤT CÁC HÀM ĐỂ BÊN NGOÀI SỬ DỤNG
 // ==========================================
-module.exports = { startCronJobs, sendBorrowConfirmationEmail, sendReturnConfirmationEmail };
+module.exports = { 
+  startCronJobs, 
+  sendBorrowConfirmationEmail, 
+  sendReturnConfirmationEmail, 
+  sendRejectionEmail, // <-- Đã export hàm mới ra đây
+  sendPaymentConfirmationEmail
+};
