@@ -1,0 +1,14 @@
+# Lõi Web Server (Tùy theo bạn dùng Flask hay FastAPI)
+Flask==3.0.0
+flask-cors==4.0.0
+# FastAPI==0.104.0
+# uvicorn==0.23.2
+
+# Tích hợp Trí tuệ nhân tạo (Gemini)
+google-generativeai==0.3.1
+
+# Kết nối Cơ sở dữ liệu MongoDB
+pymongo==4.6.0
+
+# Đọc biến môi trường (.env)
+python-dotenv==1.0.0

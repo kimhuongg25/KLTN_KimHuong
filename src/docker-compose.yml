@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: smart_library_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    container_name: smart_library_backend
+    ports:
+      - "5000:5000"
+    # Gọi toàn bộ biến môi trường từ file .env ở thư mục gốc
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+
+  ai_service:
+    build: ./ai_service
+    container_name: smart_library_ai
+    ports:
+      - "8000:8000"
+    # AI Service cũng cần đọc file .env để lấy GEMINI_API_KEY
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+
+  frontend:
+    build: ./frontend
+    container_name: smart_library_frontend
+    ports:
+      - "3000:80" # Map port 3000 của máy thật vào port 80 của Nginx
+    depends_on:
+      - backend
+      - ai_service
+
+volumes:
+  mongo_data:
