@@ -60,8 +60,8 @@ Trước khi triển khai dự án, hãy đảm bảo máy tính đã cài đặ
 Clone dự án từ GitHub và chuyển vào thư mục làm việc:
 
 ```bash
-git clone https://github.com/TenCuaBan/smart-library.git
-cd smart-library
+git clone https:https: //github.com/kimhuongg25/tn-da22ttd-110122083-dothikimhuong-thuviensothongminh.git
+cd tn-da22ttd-110122083-dothikimhuong-thuviensothongminh
 ```
 
 ---
